@@ -1,0 +1,80 @@
+---
+      - name: my_ACI_playbook
+        hosts: aci
+        gather_facts: no
+        tasks:
+          - name: Create a tenant
+            cisco.aci.aci_tenant: 
+              tenant: ansible_to_tf
+              output_level: debug
+              state: present
+            register: reg1
+
+          - name: Configure a VRF
+            cisco.aci.aci_vrf: 
+              tenant: ansible_to_tf
+              vrf: l3outtest
+              output_level: debug
+              state: present
+            register: reg2
+
+          - name: Create an L3Out
+            cisco.aci.aci_l3out:
+              tenant: ansible_to_tf
+              l3out: l3-dmz-ex-1
+              domain: l3outtest
+              vrf: l3outtest
+              route_control: export
+              output_level: debug 
+              state: present
+            register: reg3
+
+          - name: Create a node profile
+            cisco.aci.aci_l3out_logical_node_profile: 
+              tenant: ansible_to_tf
+              l3out: l3-dmz-ex-1
+              logical_node: np1101
+              output_level: debug
+              state: present
+            register: reg4
+
+          - name: Add a node
+            cisco.aci.aci_l3out_logical_node:
+              tenant: ansible_to_tf
+              l3out: l3-dmz-ex-1
+              logical_node: np1101
+              pod_id: 1
+              node_id: 1101
+              router_id: 111.111.111.111
+              output_level: debug
+              state: present
+            register: reg5
+
+          - name: Create a static route
+            cisco.aci.aci_l3out_static_routes: 
+              tenant: ansible_to_tf
+              pod_id: 1
+              node_id: 1101
+              prefix: 192.168.8.0/24
+              l3out: l3-dmz-ex-1
+              logical_node: np1101
+              output_level: debug
+              state: present
+            register: reg6
+
+          - name: Add a next hop
+            cisco.aci.aci_l3out_static_routes_nexthop:
+              tenant: ansible_to_tf
+              l3out: l3-dmz-ex-1
+              logical_node: np1101
+              node_id: 1101
+              pod_id: 1
+              prefix: 192.168.8.0/24
+              nexthop: 192.168.181.99
+              output_level: debug
+              state: present
+            register: reg7
+
+          - name: Include tasks to convert the play to TF config
+            ansible.builtin.include_tasks:
+              file: ansible_to_TF.yml

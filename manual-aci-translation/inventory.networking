@@ -1,0 +1,12 @@
+[aci]
+aci ansible_host=
+
+[aci:vars]
+ansible_user=
+ansible_password=
+ansible_command_timeout=5
+ansible_connection=ansible.netcommon.httpapi
+ansible_network_os=cisco.aci.aci
+ansible_httpapi_validate_certs=False
+ansible_httpapi_use_ssl=True
+ansible_httpapi_use_proxy=True

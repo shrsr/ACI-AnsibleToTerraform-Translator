@@ -1,0 +1,932 @@
+    - name: Declare empty lists
+      set_fact: 
+        dns: "{{ dns | default([]) }}"
+        dns_loop: "{{ dns_loop | default([]) }}"
+        dns_rest: "{{ dns_rest | default([]) }}"
+        dns_rest_loop: "{{ dns_rest_loop | default([]) }}"
+        get_factual_dns: "{{ get_factual_dns | default([]) }}"
+        qs_source_names: "{{ qs_source_names | default([]) }}"
+        qs_source_path: "{{ qs_source_path | default([]) }}"
+        provisional_dns_names: "{{ provisional_dns_names | default([]) }}"
+        provisional_dns_path: "{{ provisional_dns_path | default([]) }}"
+        factual_dns: "{{ factual_dns | default([]) }}"
+        calculate_dns_names: "{{ calculate_dns_names | default([]) }}"
+        calculate_dns_path: "{{ calculate_dns_path | default([]) }}"
+        get_factual_dns_loop: "{{ get_factual_dns_loop | default([]) }}"
+        qs_source_names_loop: "{{ qs_source_names_loop | default([]) }}"
+        qs_source_path_loop: "{{ qs_source_path_loop | default([]) }}"
+        provisional_dns_names_loop: "{{ provisional_dns_names_loop | default([]) }}"
+        provisional_dns_path_loop: "{{ provisional_dns_path_loop | default([]) }}"
+        factual_dns_loop: "{{ factual_dns_loop | default([]) }}"
+        calculate_dns_names_loop: "{{ calculate_dns_names_loop | default([]) }}"
+        calculate_dns_path_loop: "{{ calculate_dns_path_loop | default([]) }}"
+        looped_content: "{{  looped_content | default([]) }}"
+      check_mode: false
+      
+    - name: Initialize looped content
+      set_fact: 
+        looped_content: "{{  looped_content + item.value.results }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: item.value.results is defined
+      check_mode: false
+
+    - name: GET DNs via registered tasks that are not in a loop
+      set_fact: 
+        dns: "{{ dns + (item.value.current.0 | get_dns)  }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: (item.value.current is defined) and (item.value.current | length != 0) and (item.value.mo is defined) and (item.value.error is not defined)
+      check_mode: false
+
+    - name: GET DNs via registered tasks that are in a loop
+      set_fact: 
+        dns_loop: "{{ dns_loop + (item.current.0 | get_dns)  }}"
+      loop: "{{ looped_content }}"
+      when: (item.current is defined) and (item.current | length != 0) and (item.mo is defined) and (item.error is not defined)
+      check_mode: false
+
+    ## When aci_rest is used in the playbook ##
+    # non-Dry-Run not looped
+    - name: GET DNs via registered tasks for rest modules that are not in a loop when the playbook was not run in Dry-Run mode
+      set_fact: 
+        dns_rest: "{{ dns_rest + (item.value.imdata.0 | get_dns)  }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: (item.value.current is not defined) and (item.value.imdata is defined) and (item.value.imdata | length != 0) and (item.value.error is not defined)
+      check_mode: false
+
+    # non-Dry-Run looped
+    - name: GET DNs via registered tasks for rest modules that are in a loop when the playbook was not run in Dry-Run mode
+      set_fact: 
+        dns_rest_loop: "{{ dns_rest_loop + (item.imdata.0 | get_dns)  }}"
+      loop: "{{ looped_content }}"
+      when: (item.current is not defined) and (item.imdata is defined) and (item.imdata | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    # Dry-Run not looped #
+    - name: GET factual DNs from tasks (Dry-Run)
+      set_fact: 
+        get_factual_dns: "{{ get_factual_dns + (item.value.proposed | get_factual_dns_rest) }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: (item.value.current is not defined) and (item.value.proposed is defined) and (item.value.proposed | length != 0) and (item.value.error is not defined)
+      check_mode: false
+
+    - name: GET qs, source from tasks having no DNs and no DN info in the path (Dry-Run)
+      set_fact: 
+        qs_source_names: "{{ qs_source_names + (item.value.proposed | get_qs_source_from_names) }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: (item.value.current is not defined) and (item.value.proposed is defined) and (item.value.proposed | length != 0) and ("/api/mo/uni." in item.value.url) and (item.value.error is not defined)
+      check_mode: false
+
+    - name: GET qs, source from tasks having no DNs but DN info in the path (Dry-Run)
+      set_fact: 
+        qs_source_path: "{{ qs_source_path + ((item.value.proposed | combine({'path_url': item.value.url})) | get_qs_source_from_path) }}"
+      loop: "{{ lookup('ansible.builtin.dict', hostvars[inventory_hostname]) }}"
+      when: (item.value.current is not defined) and (item.value.proposed is defined) and (item.value.proposed | length != 0) and ("/api/mo/uni/" in item.value.url) and (item.value.error is not defined)
+      check_mode: false
+
+    - name: GET call using Rest with query strings from names (Dry-Run)
+      cisco.aci.aci_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        validate_certs: '{{ validate_certs | default(false) }}'
+        use_ssl: '{{ use_ssl | default(true) }}'
+        output_level: debug
+        path: "{{ item }}"
+        method: get
+      loop: "{{ (qs_source_names | last | default({})) | dict2items | selectattr('value', '==', 'from_name') | map(attribute='key') | list }}"
+      register: rest_modules_names
+      check_mode: false
+
+    - name: GET call using Rest with query strings from path (Dry-Run)
+      cisco.aci.aci_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        validate_certs: '{{ validate_certs | default(false) }}'
+        use_ssl: '{{ use_ssl | default(true) }}'
+        output_level: debug
+        path: "{{ item }}"
+        method: get
+      loop: "{{ (qs_source_path | last | default({})) | dict2items | selectattr('value', '==', 'from_path') | map(attribute='key') | list }}"
+      register: rest_modules_path
+      check_mode: false
+
+    - name: Set Provisional DNs from GET Call with query strings from names (Dry-Run)
+      set_fact:
+        provisional_dns_names: "{{ item.imdata | get_dns_from_imdata }}"
+      loop: "{{ rest_modules_names.results }}"
+      when: (item.imdata is defined) and (item.imdata | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    - name: Set Provisional DNs from GET Call with query strings from path (Dry-Run)
+      set_fact:
+        provisional_dns_path: "{{ item.imdata | get_dns_from_imdata }}"
+      loop: "{{ rest_modules_path.results }}"
+      when: (item.imdata is defined) and (item.imdata | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    - name: Set Factual DNs gotten from the playbook (Dry-Run)
+      set_fact:
+        factual_dns: "{{ ((get_factual_dns | last | default({})) | dict2items | selectattr('value', 'equalto', 'is_DN') | map(attribute='key') | list) }}"
+      check_mode: false
+
+    - name: Calculate the DNs from provisional DNs names and the source (Dry-Run)
+      set_fact:
+        calculate_dns_names: "{{ calculate_dns_names + (item | calculate_dn((qs_source_names | last | default({})) | dict2items | selectattr('value', '==', 'is_source') | map(attribute='key') | list)) }}"
+      loop: "{{ provisional_dns_names }}"
+      check_mode: false
+
+    - name: Calculate the DNs from provisional DNs path and the source (Dry-Run)
+      set_fact:
+        calculate_dns_path: "{{ calculate_dns_path + (item | calculate_dn((qs_source_path | last | default({})) | dict2items | selectattr('value', '==', 'is_source') | map(attribute='key') | list)) }}"
+      loop: "{{ provisional_dns_path }}"
+      check_mode: false
+
+    # - name: Print Calculated DNs (DEBUG)
+    #   debug:
+    #     msg: "{{ (factual_dns + calculate_dns_names + calculate_dns_path) | get_resources_and_dns }}"
+    #   check_mode: false
+
+   # Dry-Run looped#
+    - name: GET factual DNs from tasks (Dry-Run loop)
+      set_fact: 
+        get_factual_dns_loop: "{{ get_factual_dns_loop + (item.proposed | get_factual_dns_rest) }}"
+      loop: "{{ looped_content }}"
+      when: (item.current is not defined) and (item.proposed is defined) and (item.proposed | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    - name: GET qs, source from tasks having no DNs and no DN info in the path (Dry-Run loop)
+      set_fact: 
+        qs_source_names_loop: "{{ qs_source_names_loop + (item.proposed | get_qs_source_from_names) }}"
+      loop: "{{ looped_content }}"
+      when: (item.current is not defined) and (item.proposed is defined) and (item.proposed | length != 0) and ("/api/mo/uni." in item.url) and (item.error is not defined)
+      check_mode: false
+
+    - name: GET qs, source from tasks having no DNs but DN info in the path (Dry-Run loop)
+      set_fact: 
+        qs_source_path_loop: "{{ qs_source_path_loop + ((item.proposed | combine({'path_url': item.url})) | get_qs_source_from_path) }}"
+      loop: "{{ looped_content }}"
+      when: (item.current is not defined) and (item.proposed is defined) and (item.proposed | length != 0) and ("/api/mo/uni/" in item.url) and (item.error is not defined)
+      check_mode: false
+
+    - name: GET call using Rest with query strings from names (Dry-Run loop)
+      cisco.aci.aci_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        validate_certs: '{{ validate_certs | default(false) }}'
+        use_ssl: '{{ use_ssl | default(true) }}'
+        output_level: debug
+        path: "{{ item }}"
+        method: get
+      loop: "{{ (qs_source_names_loop | last | default({})) | dict2items | selectattr('value', '==', 'from_name') | map(attribute='key') | list }}"
+      register: rest_modules_names_loop
+      check_mode: false
+
+    - name: GET call using Rest with query strings from path (Dry-Run loop)
+      cisco.aci.aci_rest:
+        host: "{{ ansible_host }}"
+        username: "{{ ansible_user }}"
+        password: "{{ ansible_password }}"
+        validate_certs: '{{ validate_certs | default(false) }}'
+        use_ssl: '{{ use_ssl | default(true) }}'
+        output_level: debug
+        path: "{{ item }}"
+        method: get
+      loop: "{{ (qs_source_path_loop | last | default({})) | dict2items | selectattr('value', '==', 'from_path') | map(attribute='key') | list }}"
+      register: rest_modules_path_loop
+      check_mode: false
+
+    - name: Set Provisional DNs from GET Call with query strings from names (Dry-Run loop)
+      set_fact:
+        provisional_dns_names_loop: "{{ item.imdata | get_dns_from_imdata }}"
+      loop: "{{ rest_modules_names_loop.results }}"
+      when: (item.imdata is defined) and (item.imdata | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    - name: Set Provisional DNs from GET Call with query strings from path (Dry-Run loop)
+      set_fact:
+        provisional_dns_path_loop: "{{ item.imdata | get_dns_from_imdata }}"
+      loop: "{{ rest_modules_path_loop.results }}"
+      when: (item.imdata is defined) and (item.imdata | length != 0) and (item.error is not defined)
+      check_mode: false
+
+    - name: Set Factual DNs gotten from the playbook (Dry-Run loop)
+      set_fact:
+        factual_dns_loop: "{{ ((get_factual_dns_loop | last | default({})) | dict2items | selectattr('value', 'equalto', 'is_DN') | map(attribute='key') | list) }}"
+      check_mode: false
+
+    - name: Calculate the DNs from provisional DNs names and the source (Dry-Run loop)
+      set_fact:
+        calculate_dns_names_loop: "{{ calculate_dns_names_loop + (item | calculate_dn((qs_source_names_loop | last | default({})) | dict2items | selectattr('value', '==', 'is_source') | map(attribute='key') | list)) }}"
+      loop: "{{ provisional_dns_names_loop }}"
+      check_mode: false
+
+    - name: Calculate the DNs from provisional DNs path and the source (Dry-Run loop)
+      set_fact:
+        calculate_dns_path_loop: "{{ calculate_dns_path_loop + (item | calculate_dn((qs_source_path_loop | last | default({})) | dict2items | selectattr('value', '==', 'is_source') | map(attribute='key') | list)) }}"
+      loop: "{{ provisional_dns_path_loop }}"
+      check_mode: false
+
+    # - name: Print Calculated DNs loop (DEBUG)
+    #   debug:
+    #     msg: "{{ (factual_dns_loop + calculate_dns_names_loop + calculate_dns_path_loop) | get_resources_and_dns }}"
+    #   check_mode: false
+
+    - name: Set Resources and DNs
+      set_fact: 
+        resource_dn: "{{ ((dns + dns_loop + dns_rest + dns_rest_loop + factual_dns + calculate_dns_names + calculate_dns_path + factual_dns_loop + calculate_dns_names_loop + calculate_dns_path_loop) | unique) | get_resources_and_dns }}"
+      check_mode: false
+
+    - name: Remove existing translated TF directory
+      ansible.builtin.shell: rm -rf "{{ playbook_dir }}/{{ ansible_play_name }}"
+      check_mode: false
+
+    - name: Add a TF directory
+      ansible.builtin.shell: mkdir "{{ playbook_dir }}/{{ ansible_play_name }}"
+      check_mode: false
+
+    - name: Copy Go code which creates aci provider.tf for Terraform
+      ansible.builtin.copy:
+        content: |
+          package main
+
+          import (
+            "fmt"
+            "os"
+
+            "github.com/hashicorp/hcl/v2/hclwrite"
+            "github.com/zclconf/go-cty/cty"
+          )
+
+          func main() {
+            hclFile := hclwrite.NewEmptyFile()
+            tfFile, err := os.Create("{{ playbook_dir }}/{{ ansible_play_name }}/provider.tf")
+            if err != nil {
+              fmt.Println(err)
+              return
+            }
+            rootBody := hclFile.Body()
+            provider := rootBody.AppendNewBlock("provider", []string{"aci"})
+            providerBody := provider.Body()
+            providerBody.SetAttributeValue("url", cty.StringVal("https://{{ ansible_host }}"))
+            providerBody.SetAttributeValue("username", cty.StringVal("{{ ansible_user }}"))
+            providerBody.SetAttributeValue("password", cty.StringVal("{{ ansible_password }}"))
+            tfBlock := rootBody.AppendNewBlock("terraform", nil)
+            tfBlockBody := tfBlock.Body()
+            reqProvsBlock := tfBlockBody.AppendNewBlock("required_providers", nil)
+            reqProvsBlockBody := reqProvsBlock.Body()
+            reqProvsBlockBody.SetAttributeValue("aci", cty.ObjectVal(map[string]cty.Value{"source": cty.StringVal("ciscoDevnet/aci")}))
+            tfFile.Write(hclFile.Bytes())
+          }
+        dest: "{{ playbook_dir }}/create_provider.go"
+      check_mode: false
+
+    - name: Run Go code which creates aci provider.tf for Terraformer
+      command: go run "{{ playbook_dir }}/create_provider.go"
+      check_mode: false
+
+    - name: Copy Go code which creates aci import.tf for Terraform
+      ansible.builtin.copy:
+        content: |
+          package main
+
+          import (
+            "fmt"
+            "os"
+            "strings"
+
+            "github.com/hashicorp/hcl/v2/hclwrite"
+            "github.com/hashicorp/hcl/v2/hclsyntax"
+            "github.com/zclconf/go-cty/cty"
+          )
+
+          func main() {
+            rawAnsibleData := "{{ resource_dn }}"
+            cleanAnsibleData := strings.Trim(rawAnsibleData, "{}")
+            cleanAnsibleData = strings.ReplaceAll(cleanAnsibleData, "'", "")
+            pairs := strings.Split(cleanAnsibleData, ", ")
+            ansibleResourceDNMap := make(map[string]string)
+
+            for _, pair := range pairs {
+              kv := strings.Split(pair, ": ")
+              key := kv[0]
+              value := kv[1]
+              ansibleResourceDNMap[key] = value
+            }
+
+            hclFile := hclwrite.NewEmptyFile()
+            tfFile, err := os.Create("{{ playbook_dir }}/{{ ansible_play_name }}/import.tf")
+            if err != nil {
+              fmt.Println(err)
+              return
+            }
+            rootBody := hclFile.Body()
+
+            for key, value := range ansibleResourceDNMap {
+              importBlock := rootBody.AppendBlock(hclwrite.NewBlock("import", []string{}))
+              importBody := importBlock.Body()
+              importBody.SetAttributeValue("id", cty.StringVal(key))
+              tokens_value := hclwrite.Tokens{
+              {Type: hclsyntax.TokenIdent, Bytes: []byte(value)},
+              }
+              importBody.SetAttributeRaw("to", tokens_value)
+            }
+            tfFile.Write(hclFile.Bytes())
+          }
+        dest: "{{ playbook_dir }}/create_import.go"
+      check_mode: false
+
+    - name: Run Go code which creates import.tf for Terraform
+      command: go run "{{ playbook_dir }}/create_import.go"
+      check_mode: false
+
+    - name: Run Terraform init and generate resources.tf
+      ansible.builtin.command: "{{ item }}"
+      args:
+          chdir: "{{ playbook_dir }}/{{ ansible_play_name }}"
+      loop:
+        - terraform init
+        - terraform plan -generate-config-out=resources.tf
+        - mkdir "{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates"
+      check_mode: false
+      register: unable_to_import
+      ignore_errors: true
+
+    - name: Copy resources.tf to terraform_templates directory
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/{{ ansible_play_name }}/resources.tf"
+        dest: "{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/resources.tf"
+        remote_src: yes
+      check_mode: false
+      ignore_errors: true
+
+    - name: Copy Go code which adds implicit dependencies
+      ansible.builtin.copy:
+        content: |
+          package main
+
+          import (
+            "fmt"
+            "io"
+            "os"
+            "strings"
+
+            "github.com/hashicorp/hcl/v2"
+            "github.com/hashicorp/hcl/v2/hclsyntax"
+            "github.com/hashicorp/hcl/v2/hclwrite"
+          )
+
+          func main() {
+            rawAnsibleData := "{{ resource_dn }}"
+            cleanAnsibleData := strings.Trim(rawAnsibleData, "{}")
+            cleanAnsibleData = strings.ReplaceAll(cleanAnsibleData, "'", "")
+            pairs := strings.Split(cleanAnsibleData, ", ")
+            ansibleResourceDNMap := make(map[string]string)
+
+            for _, pair := range pairs {
+              kv := strings.Split(pair, ": ")
+              key := kv[0]
+              value := kv[1]
+              ansibleResourceDNMap[key] = value
+            }
+
+            configFilePath := "{{ playbook_dir }}/{{ ansible_play_name }}/resources.tf"
+            file, err_file := os.Open(configFilePath)
+            if err_file != nil {
+              fmt.Printf("Failed to read file: %v\n", err_file)
+              return
+            }
+            defer file.Close()
+            bytes, err_read := io.ReadAll(file)
+            if err_read != nil {
+              fmt.Println("Error reading file:", err_read)
+              return
+            }
+
+            changeBlocks, diag := hclwrite.ParseConfig(bytes, configFilePath, hcl.InitialPos)
+            if diag.HasErrors() {
+              fmt.Println("Unable to parse HCL")
+            }
+            toChange := changeBlocks.Body().Blocks()
+            for _, block := range toChange {
+              allAttributes := block.Body().Attributes()
+              for attributeName := range allAttributes {
+                getAttributeValue := block.Body().GetAttribute(attributeName).Expr().BuildTokens(nil)
+                DN := string(getAttributeValue.Bytes())
+                if referenceForDN, exists := ansibleResourceDNMap[strings.Trim(strings.ReplaceAll(DN, `"`, ``), ` `)]; exists {
+                  tokenReferenceForDN := hclwrite.Tokens{
+                    {Type: hclsyntax.TokenIdent, Bytes: []byte(referenceForDN + "." + "id")},
+                  }
+                  block.Body().SetAttributeRaw(attributeName, tokenReferenceForDN)
+                }
+              }
+            }
+
+            createFile, create_err := os.Create(configFilePath)
+            if create_err != nil {
+              fmt.Println("Error creating file:", create_err)
+              return
+            }
+            createFile.Write(changeBlocks.Bytes())
+          }
+        dest: "{{ playbook_dir }}/add_dependencies.go"
+      check_mode: false
+
+    - name: Run the Go code to add implicit dependencies
+      command: go run "{{ playbook_dir }}/add_dependencies.go"
+      check_mode: false
+
+    - name: Run Terraform apply for importing the resources
+      ansible.builtin.shell: terraform apply -auto-approve
+      args:
+          chdir: "{{ playbook_dir }}/{{ ansible_play_name }}"
+      check_mode: false
+      register: unavailable_imports
+      ignore_errors: true
+
+    - name: Extract lines to remove
+      set_fact:
+        lines_to_remove: "{{ (unavailable_imports.stderr | regex_findall('on import.tf line \\d+')) | map('regex_replace', 'on import.tf line ', '') | list }}"
+      check_mode: false
+
+    - name: Copy Go code to remove unavailable imports
+      ansible.builtin.copy:
+        content: |
+          package main
+
+          import (
+            "bufio"
+            "fmt"
+            "os"
+            "strconv"
+            "strings"
+          )
+
+          func removeLines(filename string, linesToRemove []int) error {
+            file, err := os.Open(filename)
+            if err != nil {
+              return err
+            }
+            defer file.Close()
+
+            scanner := bufio.NewScanner(file)
+            var lines []string
+            for scanner.Scan() {
+              lines = append(lines, scanner.Text())
+            }
+
+            removeMap := make(map[int]bool)
+            for _, lineNumber := range linesToRemove {
+              for i := lineNumber; i < lineNumber+4; i++ {
+                removeMap[i-1] = true
+              }
+            }
+
+            newFile, err := os.Create(filename + "_new")
+            if err != nil {
+              return err
+            }
+            defer newFile.Close()
+
+            writer := bufio.NewWriter(newFile)
+            for i, line := range lines {
+              if _, ok := removeMap[i]; !ok {
+                writer.WriteString(line + "\n")
+              }
+            }
+            writer.Flush()
+
+            return os.Rename(filename+"_new", filename)
+          }
+
+          func main() {
+            removeLinesWithNumbers := strings.Split(strings.ReplaceAll(strings.Trim("{{ lines_to_remove }}", "[]"), `'`, ``), ", ")
+            removeLinesWithNumbersInInt := make([]int, len(removeLinesWithNumbers))
+
+            for i, s := range removeLinesWithNumbers {
+              n, err := strconv.Atoi(s)
+              if err != nil {
+                fmt.Println(err)
+                return
+              }
+
+              removeLinesWithNumbersInInt[i] = n
+            }
+            err := removeLines("{{ playbook_dir }}/{{ ansible_play_name }}/import.tf", removeLinesWithNumbersInInt)
+            if err != nil {
+              panic(err)
+            }
+          }
+        dest: "{{ playbook_dir }}/remove_unavailable_imports.go"
+      check_mode: false
+      when: lines_to_remove | length != 0
+
+    - name: Run the Go code to remove unavailable imports
+      command: go run "{{ playbook_dir }}/remove_unavailable_imports.go"
+      check_mode: false
+      when: lines_to_remove | length != 0
+
+    - name: Re-run Terraform apply for importing the resources
+      ansible.builtin.shell: terraform apply -auto-approve
+      args:
+          chdir: "{{ playbook_dir }}/{{ ansible_play_name }}"
+      check_mode: false
+      when: lines_to_remove | length != 0
+      register: final_apply_errors
+      ignore_errors: true
+
+    - name: Display stderr for failed generation plan
+      debug:
+        msg: "{{ item.value.results.stderr_lines | warn_import }}"
+      loop: "{{ unable_to_import.items() | list }}"
+      check_mode: false
+      when: (item.value.results.stderr_lines is defined) and (item.value.results.stderr_lines | length !=0)
+
+    - name: Display stderr for failed apply after generation plan
+      debug:
+        msg: "{{ unavailable_imports.stderr_lines | warn_import }}"
+      check_mode: false
+      when: (unavailable_imports.stderr_lines is defined) and (unavailable_imports.stderr_lines | length !=0)
+
+    - name: Display stderr for failed apply after generation plan
+      debug:
+        msg: "{{ final_apply_errors.stderr_lines | warn_import }}"
+      check_mode: false
+      when: (final_apply_errors.stderr_lines is defined) and (final_apply_errors.stderr_lines | length !=0)
+
+    - name: Copy Go code to generate templates
+      ansible.builtin.copy:
+        content: |
+          package main
+
+          import (
+            "fmt"
+            "io"
+            "os"
+            "sort"
+            "strings"
+
+            "github.com/hashicorp/hcl/v2"
+            "github.com/hashicorp/hcl/v2/hclsyntax"
+            "github.com/hashicorp/hcl/v2/hclwrite"
+            "github.com/zclconf/go-cty/cty"
+          )
+
+          type ResourceGroup struct {
+            ResourceType string
+            IDValue      string
+            relationDN   string
+            Blocks       []*hclwrite.Block
+          }
+
+          func main() {
+            rawAnsibleData := "{{ resource_dn }}"
+
+            cleanAnsibleData := strings.Trim(rawAnsibleData, "{}")
+            cleanAnsibleData = strings.ReplaceAll(cleanAnsibleData, "'", "")
+            pairs := strings.Split(cleanAnsibleData, ", ")
+            ansibleResourceDNMap := make(map[string]string)
+
+            for _, pair := range pairs {
+              kv := strings.Split(pair, ": ")
+              key := kv[0]
+              value := kv[1]
+              ansibleResourceDNMap[key] = value
+
+            }
+
+            configFilePath := "{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/resources.tf"
+            file, err_file := os.Open(configFilePath)
+            if err_file != nil {
+              fmt.Printf("Failed to read file: %v\n", err_file)
+              return
+            }
+            defer file.Close()
+            bytes, err_read := io.ReadAll(file)
+            if err_read != nil {
+              fmt.Println("Error reading file:", err_read)
+              return
+            }
+
+            changeBlocks, diag := hclwrite.ParseConfig(bytes, configFilePath, hcl.InitialPos)
+            if diag.HasErrors() {
+              fmt.Println("Unable to parse HCL")
+            }
+            toChange := changeBlocks.Body().Blocks()
+            for _, block := range toChange {
+              allAttributes := block.Body().Attributes()
+              for attributeName := range allAttributes {
+                getAttributeValue := block.Body().GetAttribute(attributeName).Expr().BuildTokens(nil)
+                DN := string(getAttributeValue.Bytes())
+                if referenceForDN, exists := ansibleResourceDNMap[strings.Trim(strings.ReplaceAll(DN, `"`, ``), ` `)]; exists && strings.Contains(attributeName, "_dn") {
+                  carrierSubDNs := make([]string, 0)
+                  for dn := range ansibleResourceDNMap {
+                    if strings.Contains(DN, dn) && DN != dn {
+                      carrierSubDNs = append(carrierSubDNs, dn)
+                    }
+                  }
+                  tokenReferenceForDN := hclwrite.Tokens{
+                    {Type: hclsyntax.TokenIdent, Bytes: []byte(referenceForDN + "." + "id")},
+                  }
+                  tokenlongestsSubDN := hclwrite.Tokens{
+                    {Type: hclsyntax.TokenIdent, Bytes: []byte(ansibleResourceDNMap[longestSubstring(carrierSubDNs)])},
+                  }
+                  block.Body().SetAttributeRaw(attributeName, tokenReferenceForDN)
+                  block.Body().SetAttributeRaw("relationDN", tokenlongestsSubDN)
+                }
+              }
+            }
+            var resourceGroups []ResourceGroup
+            for _, block := range changeBlocks.Body().Blocks() {
+              if block.Type() == "resource" {
+                resourceType := block.Labels()[0]
+                relation_DN := ""
+
+                for name, attr := range block.Body().Attributes() {
+                  if name == "relationDN" {
+                    relation_DN = string(attr.Expr().BuildTokens(nil).Bytes())
+                    block.Body().RemoveAttribute("relationDN")
+                    break
+                  }
+                }
+
+                for name, attr := range block.Body().Attributes() {
+                  if strings.Contains(name, "_dn") {
+                    value := string(attr.Expr().BuildTokens(nil).Bytes())
+                    if strings.Contains(value, ".id") {
+                      found := false
+                      for i, group := range resourceGroups {
+                        if group.ResourceType == resourceType && group.IDValue == value {
+                          resourceGroups[i].Blocks = append(resourceGroups[i].Blocks, block)
+                          found = true
+                          break
+                        }
+                      }
+                      if !found {
+                        resourceGroups = append(resourceGroups, ResourceGroup{
+                          ResourceType: resourceType,
+                          IDValue:      value,
+                          relationDN:   relation_DN,
+                          Blocks:       []*hclwrite.Block{block},
+                        })
+                      }
+                      break
+                    }
+                  }
+                }
+
+              }
+            }
+
+            var groupedBlocks []*hclwrite.Block
+            for _, group := range resourceGroups {
+              groupedBlocks = append(groupedBlocks, group.Blocks...)
+            }
+
+            varFile := hclwrite.NewEmptyFile()
+            rootBody := varFile.Body()
+
+            mainFile := hclwrite.NewEmptyFile()
+            mainBody := mainFile.Body()
+
+            for _, block := range changeBlocks.Body().Blocks() {
+              if block.Type() != "resource" || !containsBlock(groupedBlocks, block) {
+                mainBody.AppendBlock(block)
+              }
+            }
+
+            for _, group := range resourceGroups {
+              groupName := group.ResourceType + "_" + strings.Replace(strings.Split(strings.TrimSpace(group.IDValue), ".id")[0], ".", "_", -1)
+              varBlock := rootBody.AppendNewBlock("variable", []string{groupName})
+              defaultBody := varBlock.Body()
+              defaultBlock := defaultBody.AppendNewBlock("default", nil)
+
+              newBlock := mainBody.AppendNewBlock("resource", []string{group.ResourceType, groupName})
+              newBody := newBlock.Body()
+              tokenReferenceForEach := hclwrite.Tokens{
+                {Type: hclsyntax.TokenIdent, Bytes: []byte("var." + groupName)},
+              }
+              newBody.SetAttributeRaw("for_each", tokenReferenceForEach)
+
+              nestedBlockGroupsResource := make(map[string][]*hclwrite.Block)
+
+              for i, block := range group.Blocks {
+                resourceName := block.Labels()[1]
+                varResourceBody := defaultBlock.Body()
+                varResourceBlock := varResourceBody.AppendNewBlock(resourceName, nil)
+
+                all_attributes := block.Body().Attributes()
+                for attribute_name := range all_attributes {
+                  get_attribute_value := block.Body().GetAttribute(attribute_name).Expr().BuildTokens(nil)
+                  if strings.Contains(string(get_attribute_value.Bytes()), `"`) || (strings.Contains(string(get_attribute_value.Bytes()), `null`)) {
+                    varResourceBlock.Body().SetAttributeRaw(attribute_name, get_attribute_value)
+                    tokenReferenceForValue := hclwrite.Tokens{
+                      {Type: hclsyntax.TokenIdent, Bytes: []byte("each.value." + attribute_name)},
+                    }
+                    if i == 0 {
+                      newBody.SetAttributeRaw(attribute_name, tokenReferenceForValue)
+                    }
+                  } else if strings.Contains(string(get_attribute_value.Bytes()), `.id`) {
+                    splitId := strings.Split(string(get_attribute_value.Bytes()), ".id")
+                    var tokenReferenceForId hclwrite.Tokens
+                    if group.relationDN == "" {
+                      tokenReferenceForId = hclwrite.Tokens{
+                        {Type: hclsyntax.TokenIdent, Bytes: []byte(strings.TrimSpace(splitId[0]) + ".id")},
+                      }
+                    } else {
+                      tokenReferenceForId = hclwrite.Tokens{
+                        {Type: hclsyntax.TokenIdent, Bytes: []byte(strings.TrimSpace(strings.Split(splitId[0], ".")[0]) + "." + strings.TrimSpace(strings.Split(splitId[0], ".")[0]) + "_" + strings.Replace(strings.TrimSpace(group.relationDN), ".", "_", -1) + `["` + strings.Split(strings.TrimSpace(group.IDValue), ".")[1] + `"]` + ".id")},
+                      }
+                    }
+                    if i == 0 {
+                      newBody.SetAttributeRaw(attribute_name, tokenReferenceForId)
+                    }
+                  } else {
+                    if i == 0 {
+                      newBody.SetAttributeRaw(attribute_name, get_attribute_value)
+                    }
+                  }
+                  for _, nestedBlock := range block.Body().Blocks() {
+                    nestedBlockGroupsResource[nestedBlock.Type()] = append(nestedBlockGroupsResource[nestedBlock.Type()], nestedBlock)
+                  }
+                }
+
+                nestedBlockGroups := make(map[string][]*hclwrite.Block)
+                for _, nestedBlock := range block.Body().Blocks() {
+                  nestedBlockGroups[nestedBlock.Type()] = append(nestedBlockGroups[nestedBlock.Type()], nestedBlock)
+
+                }
+
+                for _, nestedBlocks := range nestedBlockGroups {
+
+                  nestedBlockMaps := make(map[string][]map[string]cty.Value)
+
+                  for _, nestedBlock := range nestedBlocks {
+                    values := make(map[string]cty.Value)
+
+                    for name, attr := range nestedBlock.Body().Attributes() {
+                      strVal := string(attr.Expr().BuildTokens(nil).Bytes())
+                      values[name] = cty.StringVal(strVal)
+                    }
+
+                    nestedBlockMaps[nestedBlock.Type()] = append(nestedBlockMaps[nestedBlock.Type()], values)
+                  }
+
+                  for blockType, blockMaps := range nestedBlockMaps {
+                    writeMap(varResourceBlock.Body(), blockType, blockMaps)
+                  }
+
+                }
+
+              }
+              for blockType, nestedBlocks := range nestedBlockGroupsResource {
+                dynamicBlock := newBody.AppendNewBlock("dynamic", []string{blockType})
+                dynamicBody := dynamicBlock.Body()
+
+                dynamicBody.SetAttributeRaw("for_each", hclwrite.Tokens{
+                  {Type: hclsyntax.TokenIdent, Bytes: []byte("each.value." + blockType + " != null ? " + "each.value." + blockType + " : []")},
+                })
+
+                contentBlock := dynamicBody.AppendNewBlock("content", nil)
+
+                for name := range nestedBlocks[0].Body().Attributes() {
+                  tokens := hclwrite.Tokens{
+                    {Type: hclsyntax.TokenIdent,
+                      Bytes: []byte(blockType + ".value." + name)},
+                  }
+                  contentBlock.Body().SetAttributeRaw(name, tokens)
+                }
+              }
+            }
+
+            fileAst, diag := hclwrite.ParseConfig(varFile.Bytes(), "variables.tf", hcl.InitialPos)
+            if diag.HasErrors() {
+              fmt.Println("Unable to parse HCL:", diag)
+              return
+            }
+
+            for _, variableBlocks := range fileAst.Body().Blocks() {
+              tokens := hclwrite.Tokens{
+                {Type: hclsyntax.TokenOBrace, Bytes: []byte("{"), SpacesBefore: 1},
+                {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+              }
+              for _, defaultBlock := range variableBlocks.Body().Blocks() {
+                for _, attrBlock := range defaultBlock.Body().Blocks() {
+                  values := make(map[string]cty.Value)
+                  for name, attr := range attrBlock.Body().Attributes() {
+
+                    strVal := string(attr.Expr().BuildTokens(nil).Bytes())
+                    values[name] = cty.StringVal(strVal)
+                  }
+                  mapTokens := writeMapDefault(variableBlocks.Body(), attrBlock.Type(), values)
+                  tokens = append(tokens, mapTokens...)
+                  defaultBlock.Body().RemoveBlock(attrBlock)
+                }
+                tokens = append(tokens,
+                  &hclwrite.Token{Type: hclsyntax.TokenCBrace, Bytes: []byte("}")},
+                  &hclwrite.Token{Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+                )
+                variableBlocks.Body().SetAttributeRaw("default", tokens)
+                variableBlocks.Body().RemoveBlock(defaultBlock)
+              }
+            }
+
+            err := os.WriteFile("{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/variables.tf", fileAst.Bytes(), 0644)
+            if err != nil {
+              fmt.Println("Failed to write file:", err)
+            }
+
+            os.WriteFile("{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/resources.tf", mainFile.Bytes(), 0644)
+          }
+
+          func writeMap(body *hclwrite.Body, key string, values []map[string]cty.Value) {
+            tokens := []*hclwrite.Token{
+              {Type: hclsyntax.TokenOBrack, Bytes: []byte("["), SpacesBefore: 1},
+              {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+            }
+
+            for i, valueMap := range values {
+              tokens = append(tokens, &hclwrite.Token{Type: hclsyntax.TokenOBrace, Bytes: []byte("{")})
+              keys := make([]string, 0, len(valueMap))
+              for k := range valueMap {
+                keys = append(keys, k)
+              }
+              sort.Strings(keys)
+              for _, k := range keys {
+                v := valueMap[k]
+                tokens = append(tokens, []*hclwrite.Token{
+                  {Type: hclsyntax.TokenQuotedLit, Bytes: []byte(k)},
+                  {Type: hclsyntax.TokenEqual, Bytes: []byte("=")},
+                  {Type: hclsyntax.TokenQuotedLit, Bytes: []byte(v.AsString())},
+                  {Type: hclsyntax.TokenComma, Bytes: []byte(",")},
+                  {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+                }...)
+              }
+              tokens = append(tokens, &hclwrite.Token{Type: hclsyntax.TokenCBrace, Bytes: []byte("}")})
+              if i < len(values)-1 {
+                tokens = append(tokens, &hclwrite.Token{Type: hclsyntax.TokenComma, Bytes: []byte(",")})
+              }
+            }
+            tokens = append(tokens, &hclwrite.Token{Type: hclsyntax.TokenCBrack, Bytes: []byte("]")})
+            body.SetAttributeRaw(key, tokens)
+          }
+
+          func writeMapDefault(body *hclwrite.Body, key string, values map[string]cty.Value) hclwrite.Tokens {
+            tokens := hclwrite.Tokens{
+              {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+              {Type: hclsyntax.TokenCQuote, Bytes: []byte{'"'}},
+              {Type: hclsyntax.TokenQuotedLit, Bytes: []byte(key)},
+              {Type: hclsyntax.TokenCQuote, Bytes: []byte{'"'}},
+              {Type: hclsyntax.TokenEqual, Bytes: []byte("=")},
+              {Type: hclsyntax.TokenOBrace, Bytes: []byte("{"), SpacesBefore: 1},
+              {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+            }
+            keys := make([]string, 0, len(values))
+            for k := range values {
+              keys = append(keys, k)
+            }
+            sort.Strings(keys)
+            for _, k := range keys {
+              v := values[k]
+              tokens = append(tokens, []*hclwrite.Token{
+                {Type: hclsyntax.TokenQuotedLit, Bytes: []byte(k)},
+                {Type: hclsyntax.TokenEqual, Bytes: []byte("=")},
+                {Type: hclsyntax.TokenQuotedLit, Bytes: []byte(v.AsString())},
+                {Type: hclsyntax.TokenNewline, Bytes: []byte("\n")},
+              }...)
+            }
+            tokens = append(tokens,
+              &hclwrite.Token{Type: hclsyntax.TokenCBrace, Bytes: []byte("}")},
+            )
+            return tokens
+          }
+
+          func containsBlock(blocks []*hclwrite.Block, block *hclwrite.Block) bool {
+            for _, b := range blocks {
+              if b == block {
+                return true
+              }
+            }
+            return false
+          }
+
+          func longestSubstring(subStrings []string) string {
+            longest := ""
+            for i, str1 := range subStrings {
+              for j, str2 := range subStrings {
+                if i != j && strings.Contains(str1, str2) && len(str2) > len(longest) {
+                  longest = str2
+                }
+              }
+            }
+            return longest
+          }
+        dest: "{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/generate_templates.go"
+      check_mode: false
+      ignore_errors: true
+
+    - name: Run the Go code to generate templates
+      command: go run "{{ playbook_dir }}/{{ ansible_play_name }}/terraform_templates/generate_templates.go"
+      check_mode: false
+      ignore_errors: true
