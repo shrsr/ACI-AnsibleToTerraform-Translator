@@ -1,5 +1,5 @@
 # ACI-AnsibleToTerraform-Translator
-This repository contains a tool for translating Ansible configurations for Application Centric Infrastructure (ACI) into Terraform configuration files. It aims to streamline the process of migrating from Ansible to Terraform for managing ACI.
+This repository showcases a tool for transitioning Ansible configurations for Application Centric Infrastructure (ACI) into Terraform configuration files. It is designed to simplify the migration process from Ansible to Terraform in managing ACI. Please note, while it strives to be comprehensive, this tool primarily serves as a learning resource and stepping stone, rather than a fully-fledged, enterprise-level solution.
 
 Important Note
 ==============
