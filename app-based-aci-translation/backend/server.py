@@ -99,7 +99,7 @@ def append_register_to_non_sections(playbook, sections, counter):
                         if not any(key in item for key in ["include_tasks", "import_tasks", "vars", "ansible.builtin.include_tasks", "ansible.builtin.import_tasks", "ansible.builtin.vars"]):
                             if item.get("register") is None:
                                 item["register"] = "content{0}".format(counter)
-                            item["ignore_errors"] = True
+                            #item["ignore_errors"] = True
                         for key, val in item.items():
                             if isinstance(val, dict) and (("cisco.aci" in key) or ("aci_" in key)):
                                 val.pop("host", None)
@@ -116,7 +116,7 @@ def append_register_to_non_sections(playbook, sections, counter):
                     if not any(key in playbook[section] for key in ["include_tasks", "import_tasks", "vars", "ansible.builtin.include_tasks", "ansible.builtin.import_tasks", "ansible.builtin.vars"]):
                         if playbook[section].get("register") is None:
                             playbook[section]["register"] = "content{0}".format(counter)
-                        playbook[section]["ignore_errors"] = True
+                        #playbook[section]["ignore_errors"] = True
                     playbook[section].pop("delegate_to", None)
                     for key, parameter in playbook[section].items():
                         if isinstance(parameter, dict) and (("cisco.aci" in key) or ("aci_" in key)):
